@@ -1,0 +1,17 @@
+{
+  "cycle": "hourly",
+  "hostname": "solana-hotswap",
+  "image": "ubuntu_24_04_64bit",
+  "plan": "amd-ryzen-9950x",
+  "region": "LT-Siauliai",
+  "spot_market": false,
+  "ssh_keys": [
+    12345
+  ],
+  "tags": {
+    "created_by": "solana-hot-swap-operator-kit",
+    "owner": "solana-operator",
+    "purpose": "solana-validator-hotswap",
+    "rental_cap": "120m"
+  }
+}

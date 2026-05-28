@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "solana-hot-swap-operator-kit"
+version = "0.1.0"
+description = "Public Solana/Firedancer hot-swap operator kit"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "web3validator" }]
+keywords = ["solana", "validator", "hotswap", "operations", "cherry-servers"]
+dependencies = []
+
+[project.scripts]
+solana-hot-swap-operator-kit = "solana_validator_hotswap.cli:main"
+solana-validator-hotswap = "solana_validator_hotswap.cli:main"
+
+[tool.setuptools]
+packages = ["solana_validator_hotswap"]

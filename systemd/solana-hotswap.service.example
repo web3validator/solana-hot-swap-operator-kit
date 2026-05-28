@@ -1,0 +1,21 @@
+[Unit]
+Description=Solana hot-swap operator worker
+Documentation=file:/opt/solana-hot-swap-operator-kit/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=solana-hotswap
+Group=solana-hotswap
+WorkingDirectory=/opt/solana-hot-swap-operator-kit
+EnvironmentFile=/etc/solana-hotswap/hotswap.env
+ExecStart=/usr/bin/env /opt/solana-hot-swap-operator-kit/scripts/solana-cherry-hotswap-guard.sh $HOTSWAP_COMMAND
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/solana-hot-swap-operator-kit/runs
+
+[Install]
+WantedBy=multi-user.target

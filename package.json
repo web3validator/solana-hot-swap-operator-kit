@@ -1,0 +1,13 @@
+{
+  "name": "solana-hot-swap-operator-kit",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Public Solana/Firedancer hot-swap operator kit",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "check": "make check",
+    "redaction:check": "python3 scripts/redaction-check.py ."
+  },
+  "author": "web3validator"
+}
