@@ -65,7 +65,7 @@ solana-hot-swap-operator-kit/
 ## Quick start
 
 ```bash
-git clone https://github.com/YOUR_ORG/solana-hot-swap-operator-kit.git
+git clone https://github.com/web3validator/solana-hot-swap-operator-kit.git
 cd solana-hot-swap-operator-kit
 cp examples/env.example .env
 ```
@@ -89,13 +89,15 @@ Print a Cherry create payload without creating a server:
 Create one paid hourly Cherry server only after explicit approval:
 
 ```bash
-CONFIRM_PAID_CHERRY_CREATE=I_CONFIRM_ONE_HOURLY_SERVER   ./scripts/solana-cherry-hotswap-guard.sh cherry-create
+CONFIRM_PAID_CHERRY_CREATE=I_CONFIRM_ONE_HOURLY_SERVER \
+  ./scripts/solana-cherry-hotswap-guard.sh cherry-create
 ```
 
 Delete only with exact server id confirmation:
 
 ```bash
-CONFIRM_DELETE_SERVER_ID=REPLACE_WITH_SERVER_ID   ./scripts/solana-cherry-hotswap-guard.sh cherry-delete
+CONFIRM_DELETE_SERVER_ID=REPLACE_WITH_SERVER_ID \
+  ./scripts/solana-cherry-hotswap-guard.sh cherry-delete
 ```
 
 ## Main guard commands
