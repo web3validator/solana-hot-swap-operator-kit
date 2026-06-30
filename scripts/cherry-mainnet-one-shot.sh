@@ -65,6 +65,9 @@ run_plan() {
   echo "== hotswap config =="
   ./scripts/solana-cherry-hotswap-guard.sh show-config
 
+  echo "== Cherry credit summary =="
+  ./scripts/solana-cherry-hotswap-guard.sh cherry-credit-summary
+
   echo "== Cherry project empty gate =="
   ./scripts/solana-cherry-hotswap-guard.sh cherry-list
 
@@ -102,6 +105,35 @@ wait_for_ip() {
   set +a
 }
 
+wait_for_ssh() {
+  if [ -z "${SERVER_IP:-}" ]; then
+    wait_for_ip
+  fi
+  ./scripts/solana-cherry-hotswap-guard.sh cherry-wait-ssh --timeout-seconds "${CHERRY_WAIT_SSH_TIMEOUT_SECONDS:-1800}" --interval-seconds "${CHERRY_WAIT_SSH_INTERVAL_SECONDS:-120}" --initial-delay-seconds "${CHERRY_WAIT_SSH_INITIAL_DELAY_SECONDS:-900}"
+}
+
+wait_until_bootstrap_window() {
+  delay="${CHERRY_BOOTSTRAP_DELAY_SECONDS:-1200}"
+  if [ "$delay" -le 0 ]; then
+    echo "bootstrap_min_age_disabled=true"
+    return
+  fi
+  if [ -n "${CREATED_AT_EPOCH:-}" ]; then
+    now="$(date +%s)"
+    target=$((CREATED_AT_EPOCH + delay))
+    remaining=$((target - now))
+    if [ "$remaining" -gt 0 ]; then
+      echo "== waiting ${remaining}s until target reaches minimum bootstrap age (${delay}s from create) =="
+      sleep "$remaining"
+    else
+      echo "bootstrap_min_age_satisfied=true"
+    fi
+  else
+    echo "== CREATED_AT_EPOCH missing; waiting fallback ${delay}s before bootstrap =="
+    sleep "$delay"
+  fi
+}
+
 ssh_base_args() {
   printf '%s\n' \
     -i "${CHERRY_SSH_KEY:?missing CHERRY_SSH_KEY}" \
@@ -129,9 +161,25 @@ bootstrap_target() {
   : "${FD_NETWORK:?missing FD_NETWORK in $env_file}"
   : "${SSH_ALLOW_CIDR:?missing SSH_ALLOW_CIDR in $env_file}"
 
-  target_user="${CHERRY_TARGET_USER:-ubuntu}"
-  target="$target_user@$SERVER_IP"
   mapfile -t ssh_args < <(ssh_base_args)
+  target_user="${CHERRY_TARGET_USER:-}"
+  if [ -z "$target_user" ]; then
+    for candidate in root ubuntu; do
+      if ! ssh "${ssh_args[@]}" "$candidate@$SERVER_IP" true >/dev/null 2>&1; then
+        continue
+      fi
+      if [ "$candidate" = "root" ] || ssh "${ssh_args[@]}" "$candidate@$SERVER_IP" "sudo -n true" >/dev/null 2>&1; then
+        target_user="$candidate"
+        break
+      fi
+    done
+  fi
+  if [ -z "$target_user" ]; then
+    echo "BLOCKER: neither ubuntu nor root accepted the configured Cherry SSH key" >&2
+    exit 5
+  fi
+  target="$target_user@$SERVER_IP"
+  echo "cherry_bootstrap_ssh_user=$target_user"
 
   echo "== upload bootstrap assets to $target =="
   ssh "${ssh_args[@]}" "$target" "sudo install -d -m 0700 /root/.ssh-secrets"
@@ -170,22 +218,20 @@ case "$mode" in
   bootstrap)
     load_state_file
     wait_for_ip
+    wait_for_ssh
     echo "== attempt-after-create gate =="
     ./scripts/solana-cherry-hotswap-guard.sh attempt-after-create
-    delay="${CHERRY_BOOTSTRAP_DELAY_SECONDS:-1200}"
-    echo "== waiting ${delay}s before bootstrap =="
-    sleep "$delay"
+    wait_until_bootstrap_window
     bootstrap_target
     echo "bootstrap_complete=true"
     ;;
   create-and-bootstrap)
     run_create
     wait_for_ip
+    wait_for_ssh
     echo "== attempt-after-create gate =="
     ./scripts/solana-cherry-hotswap-guard.sh attempt-after-create
-    delay="${CHERRY_BOOTSTRAP_DELAY_SECONDS:-1200}"
-    echo "== waiting ${delay}s before bootstrap =="
-    sleep "$delay"
+    wait_until_bootstrap_window
     bootstrap_target
     echo "create_and_bootstrap_complete=true"
     ;;

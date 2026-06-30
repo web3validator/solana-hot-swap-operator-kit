@@ -565,6 +565,87 @@ def cmd_cherry_balance(_args) -> None:
     print_json(redacted(data))
 
 
+def team_credit_summary(team: dict) -> dict:
+    credit = team.get("credit") if isinstance(team.get("credit"), dict) else {}
+    account = credit.get("account") if isinstance(credit.get("account"), dict) else {}
+    promo = credit.get("promo") if isinstance(credit.get("promo"), dict) else {}
+    resources = (
+        credit.get("resources") if isinstance(credit.get("resources"), dict) else {}
+    )
+    remaining = (
+        resources.get("remaining")
+        if isinstance(resources.get("remaining"), dict)
+        else {}
+    )
+    pricing = (
+        resources.get("pricing") if isinstance(resources.get("pricing"), dict) else {}
+    )
+    return {
+        "team_id": team.get("id"),
+        "team_href": team.get("href"),
+        "account_remaining": account.get("remaining"),
+        "account_usage": account.get("usage"),
+        "account_currency": account.get("currency"),
+        "promo_remaining": promo.get("remaining"),
+        "promo_currency": promo.get("currency"),
+        "remaining_resource_time": remaining.get("time"),
+        "remaining_resource_unit": remaining.get("unit"),
+        "current_resource_price": pricing.get("price"),
+        "current_resource_unit": pricing.get("unit"),
+    }
+
+
+def cmd_cherry_credit_summary(_args) -> None:
+    data, _ = api_request("GET", "teams")
+    teams = data if isinstance(data, list) else []
+    print_json([team_credit_summary(team) for team in teams if isinstance(team, dict)])
+
+
+def ssh_key_summary(item: dict) -> dict:
+    return {
+        "id": item.get("id"),
+        "label": item.get("label"),
+        "fingerprint": item.get("fingerprint"),
+        "href": item.get("href"),
+        "created": item.get("created"),
+        "updated": item.get("updated"),
+    }
+
+
+def cmd_cherry_ssh_keys(_args) -> None:
+    data, _ = api_request("GET", "ssh-keys")
+    keys = data if isinstance(data, list) else []
+    print_json([ssh_key_summary(item) for item in keys if isinstance(item, dict)])
+
+
+def cmd_cherry_create_ssh_key(args) -> None:
+    label = args.label.strip()
+    if not label:
+        fail("--label is required")
+    public_key_file = Path(args.public_key_file)
+    if not public_key_file.is_file():
+        fail(f"public key file not found: {public_key_file}")
+    public_key = public_key_file.read_text().strip()
+    if not public_key.startswith(("ssh-ed25519 ", "ssh-rsa ", "ecdsa-sha2-")):
+        fail("public key file does not look like an OpenSSH public key")
+
+    existing, _ = api_request("GET", "ssh-keys")
+    keys = existing if isinstance(existing, list) else []
+    for item in keys:
+        if not isinstance(item, dict):
+            continue
+        if item.get("key") == public_key or item.get("label") == label:
+            out = ssh_key_summary(item)
+            out["created"] = False
+            print_json(out)
+            return
+
+    created, _ = api_request("POST", "ssh-keys", {"label": label, "key": public_key})
+    out = ssh_key_summary(created or {})
+    out["created"] = True
+    print_json(out)
+
+
 def attempt_dir() -> Path:
     p = Path(env("HOTSWAP_RUN_DIR", "runs/cherry-attempts"))
     p.mkdir(parents=True, exist_ok=True)
@@ -634,6 +715,25 @@ def update_state_file_ip(state_file: Path, server_ip_value: str) -> None:
     state_file.write_text("\n".join(out) + "\n")
 
 
+def server_summary(server: dict) -> dict:
+    plan = server.get("plan") if isinstance(server.get("plan"), dict) else {}
+    region = server.get("region") if isinstance(server.get("region"), dict) else {}
+    return {
+        "id": server.get("id") or server.get("server_id"),
+        "hostname": server.get("hostname") or server.get("name"),
+        "state": server.get("state"),
+        "status": server.get("status"),
+        "ip": extract_ip(server),
+        "plan": plan.get("slug") or plan.get("name"),
+        "region": region.get("slug") or region.get("name"),
+    }
+
+
+def cmd_cherry_status(_args) -> None:
+    data, _ = api_request("GET", f"servers/{server_id()}")
+    print_json(server_summary(extract_server(data)))
+
+
 def cmd_cherry_wait_ip(args) -> None:
     sid = server_id()
     deadline = time.time() + int(args.timeout_seconds)
@@ -655,6 +755,48 @@ def cmd_cherry_wait_ip(args) -> None:
             return
         time.sleep(interval)
     fail(f"SERVER_IP was not assigned within {args.timeout_seconds}s", 34)
+
+
+def try_ssh_user(
+    user: str, ip: str, key: str, known_hosts: str
+) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ssh_args(key, known_hosts) + [f"{user}@{ip}", "true"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+
+
+def cmd_cherry_wait_ssh(args) -> None:
+    ip = server_ip()
+    key = env("CHERRY_SSH_KEY")
+    known_hosts = cherry_known_hosts()
+    initial_delay = int(args.initial_delay_seconds)
+    created_raw = env("CREATED_AT_EPOCH")
+    if initial_delay > 0 and created_raw:
+        remaining = int(created_raw) + initial_delay - int(time.time())
+        if remaining > 0:
+            print(f"ssh_initial_delay_remaining_seconds={remaining}")
+            time.sleep(remaining)
+    deadline = time.time() + int(args.timeout_seconds)
+    interval = int(args.interval_seconds)
+    last_error = ""
+    while time.time() <= deadline:
+        for user in ("ubuntu", "root"):
+            result = try_ssh_user(user, ip, key, known_hosts)
+            if result.returncode == 0:
+                print(f"cherry_ssh_user={user}")
+                print("cherry_ssh_ready=true")
+                return
+            stderr = result.stderr.strip().splitlines()
+            if stderr:
+                last_error = stderr[-1]
+        if last_error:
+            print(f"ssh_wait_last_error={last_error}", file=sys.stderr)
+        time.sleep(interval)
+    fail(f"SSH did not become ready within {args.timeout_seconds}s", 33)
 
 
 def cmd_cherry_actions(_args) -> None:
@@ -680,7 +822,7 @@ def cmd_cherry_rebuild_payload(_args) -> None:
 
 
 def cmd_deadline(args) -> None:
-    raw = args.created_at_epoch or env("CREATED_AT_EPOCH")
+    raw = getattr(args, "created_at_epoch", "") or env("CREATED_AT_EPOCH")
     if not raw:
         fail("CREATED_AT_EPOCH is required")
     start = int(raw)
@@ -886,9 +1028,14 @@ def build_parser() -> argparse.ArgumentParser:
         "cherry-order-payload": cmd_cherry_order_payload,
         "cherry-list": cmd_cherry_list,
         "cherry-balance": cmd_cherry_balance,
+        "cherry-credit-summary": cmd_cherry_credit_summary,
+        "cherry-ssh-keys": cmd_cherry_ssh_keys,
+        "cherry-create-ssh-key": cmd_cherry_create_ssh_key,
         "cherry-create": cmd_cherry_create,
+        "cherry-status": cmd_cherry_status,
         "cherry-actions": cmd_cherry_actions,
         "cherry-wait-ip": cmd_cherry_wait_ip,
+        "cherry-wait-ssh": cmd_cherry_wait_ssh,
         "cherry-rebuild-payload": cmd_cherry_rebuild_payload,
         "cherry-verify": cmd_cherry_verify,
         "post-bootstrap-verify": cmd_post_bootstrap_verify,
@@ -906,6 +1053,13 @@ def build_parser() -> argparse.ArgumentParser:
             p.add_argument("--timeout-seconds", default="1800")
             p.add_argument("--interval-seconds", default="30")
             p.add_argument("--state-file", default="")
+        if name == "cherry-wait-ssh":
+            p.add_argument("--timeout-seconds", default="1800")
+            p.add_argument("--interval-seconds", default="120")
+            p.add_argument("--initial-delay-seconds", default="0")
+        if name == "cherry-create-ssh-key":
+            p.add_argument("--label", required=True)
+            p.add_argument("--public-key-file", required=True)
         p.set_defaults(func=func)
     p = sub.add_parser("deadline")
     p.add_argument("--created-at-epoch", default="")
