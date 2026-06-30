@@ -150,7 +150,7 @@ The Cherry SSH key is managed through private env:
 - `CHERRY_SSH_KEY`
 - `CHERRY_TARGET_AUTHORIZED_KEYS_FILE`
 
-`CHERRY_TARGET_AUTHORIZED_KEYS_FILE` is a private local file containing OpenSSH public keys that should be allowed into every Cherry target, for example the source mainnet host public key. The agent may print the file path and line count, but should not dump operator infrastructure keys unless the operator explicitly asks.
+`CHERRY_TARGET_AUTHORIZED_KEYS_FILE` is a private local file containing OpenSSH public keys that should be allowed to upload validator keypairs into every Cherry target. By default these keys are installed only for the restricted `solana-keydrop` SFTP-only chroot user, not for `root` or `ubuntu` shell access. The agent may print the file path and line count, but should not dump operator infrastructure keys unless the operator explicitly asks.
 
 The agent may verify these keys exist by printing only key names/paths or order payload, but must not print private key contents.
 
@@ -166,19 +166,35 @@ sudo -n /opt/solana-hot-swap-operator-kit/scripts/solana-cherry-hotswap-guard.sh
 
 Do not handoff identity automatically after bootstrap.
 
-After bootstrap/reboot, key staging and start/sync are a separate explicit operation:
+After bootstrap/reboot, validator keypairs should be uploaded from source/main-sol through the restricted keydrop user. Do not commit live target IPs; pass them only at runtime.
+
+Preferred manual source-side dry-run on main-sol:
+
+```bash
+TARGET_IP=REPLACE_WITH_TARGET_IP \
+  /path/to/solana-hot-swap-operator-kit/scripts/solana-source-upload-keys.sh --dry-run
+```
+
+Then execute manually on main-sol:
+
+```bash
+TARGET_IP=REPLACE_WITH_TARGET_IP \
+  CONFIRM_SOLANA_KEY_UPLOAD=I_CONFIRM_SOLANA_KEY_UPLOAD \
+  /path/to/solana-hot-swap-operator-kit/scripts/solana-source-upload-keys.sh --execute
+```
+
+The operator/OpenClaw host should not run this script and should never handle validator keypair contents.
+
+Then key staging and start/sync are a separate explicit operation:
 
 ```bash
 sudo -n env HOTSWAP_ENV_FILE=/etc/solana-hotswap/hotswap.env \
   TARGET_HOST=ubuntu@REPLACE_WITH_TARGET_IP \
-  STAKED_IDENTITY_FILE=/path/to/staked-identity.json \
-  SECONDARY_UNSTAKED_IDENTITY_FILE=/path/to/secondary-unstaked-identity.json \
-  VOTE_KEYPAIR_FILE=/path/to/vote-account-keypair.json \
   CONFIRM_TARGET_STAGE_START=I_CONFIRM_TARGET_STAGE_START \
-  /opt/solana-hot-swap-operator-kit/scripts/solana-target-stage-start-sync.sh --execute --all
+  /opt/solana-hot-swap-operator-kit/scripts/solana-target-stage-start-sync.sh --execute --all-from-keydrop
 ```
 
-This operation stages keypairs, enables and starts `fire.service`, waits for sync/catchup, and sends Telegram notification when the target is ready for identity handoff.
+This operation moves keypairs out of keydrop incoming, stages them in `/home/ubuntu/keys` and `/mnt/ramdisk`, enables and starts `fire.service`, waits for sync/catchup, shreds/removes incoming copies by default, and sends Telegram notification when the target is ready for identity handoff.
 
 For identity handoff use:
 

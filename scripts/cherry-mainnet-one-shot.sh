@@ -234,7 +234,9 @@ bootstrap_target() {
     printf 'TARGET_DISABLE_FIRE_UNTIL_KEYS=%q\n' "${TARGET_DISABLE_FIRE_UNTIL_KEYS:-true}"
     if [ -n "$extra_authorized_keys_file" ]; then
       printf 'TARGET_AUTHORIZED_KEYS_FILE=%q\n' "/root/.ssh-secrets/target-authorized-keys"
+      printf 'TARGET_AUTHORIZED_KEYS_MODE=%q\n' "${CHERRY_TARGET_AUTHORIZED_KEYS_MODE:-keydrop}"
       printf 'TARGET_AUTHORIZED_KEYS_USER=%q\n' "${FD_USER:-ubuntu}"
+      printf 'TARGET_KEYDROP_USER=%q\n' "${CHERRY_TARGET_KEYDROP_USER:-solana-keydrop}"
     fi
   } > "$bootstrap_env_file"
 
@@ -243,6 +245,7 @@ bootstrap_target() {
   scp "${ssh_args[@]}" "$repo_root/scripts/solana-cherry-target-bootstrap.sh" "$target:/tmp/solana-cherry-target-bootstrap.sh"
   scp "${ssh_args[@]}" "$repo_root/scripts/solana-cherry-target-tmux-runner.sh" "$target:/tmp/solana-cherry-target-tmux-runner.sh"
   scp "${ssh_args[@]}" "$repo_root/scripts/solana-cherry-target-tmux-start.sh" "$target:/tmp/solana-cherry-target-tmux-start.sh"
+  scp "${ssh_args[@]}" "$repo_root/scripts/solana-target-keydrop-setup.sh" "$target:/tmp/solana-target-keydrop-setup.sh"
   scp "${ssh_args[@]}" "$bootstrap_env_file" "$target:/tmp/solana-cherry-bootstrap.env"
   scp "${ssh_args[@]}" "${CHERRY_SSH_KEY:?missing CHERRY_SSH_KEY}" "$target:/tmp/cherry-bootstrap-key"
   if [ -n "$extra_authorized_keys_file" ]; then
@@ -254,7 +257,7 @@ bootstrap_target() {
     extra_cleanup=""
   fi
   rm -f "$bootstrap_env_file"
-  ssh "${ssh_args[@]}" "$target" "${root_cmd}install -m 0700 /tmp/solana-cherry-target-bootstrap.sh /root/solana-cherry-target-bootstrap.sh && ${root_cmd}install -m 0700 /tmp/solana-cherry-target-tmux-runner.sh /root/solana-cherry-target-tmux-runner.sh && ${root_cmd}install -m 0700 /tmp/solana-cherry-target-tmux-start.sh /root/solana-cherry-target-tmux-start.sh && ${root_cmd}install -m 0600 /tmp/solana-cherry-bootstrap.env /root/solana-cherry-bootstrap.env && ${root_cmd}install -m 0600 /tmp/cherry-bootstrap-key /root/.ssh-secrets/cherry-bootstrap-key${extra_install} && rm -f /tmp/solana-cherry-target-bootstrap.sh /tmp/solana-cherry-target-tmux-runner.sh /tmp/solana-cherry-target-tmux-start.sh /tmp/solana-cherry-bootstrap.env /tmp/cherry-bootstrap-key${extra_cleanup}"
+  ssh "${ssh_args[@]}" "$target" "${root_cmd}install -m 0700 /tmp/solana-cherry-target-bootstrap.sh /root/solana-cherry-target-bootstrap.sh && ${root_cmd}install -m 0700 /tmp/solana-cherry-target-tmux-runner.sh /root/solana-cherry-target-tmux-runner.sh && ${root_cmd}install -m 0700 /tmp/solana-cherry-target-tmux-start.sh /root/solana-cherry-target-tmux-start.sh && ${root_cmd}install -m 0700 /tmp/solana-target-keydrop-setup.sh /root/solana-target-keydrop-setup.sh && ${root_cmd}install -m 0600 /tmp/solana-cherry-bootstrap.env /root/solana-cherry-bootstrap.env && ${root_cmd}install -m 0600 /tmp/cherry-bootstrap-key /root/.ssh-secrets/cherry-bootstrap-key${extra_install} && rm -f /tmp/solana-cherry-target-bootstrap.sh /tmp/solana-cherry-target-tmux-runner.sh /tmp/solana-cherry-target-tmux-start.sh /tmp/solana-target-keydrop-setup.sh /tmp/solana-cherry-bootstrap.env /tmp/cherry-bootstrap-key${extra_cleanup}"
 
   if [ "${CHERRY_BOOTSTRAP_TMUX:-true}" = "true" ]; then
     session="${CHERRY_BOOTSTRAP_SESSION:-solana-bootstrap}"

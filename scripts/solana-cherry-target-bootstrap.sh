@@ -33,15 +33,7 @@ export BAM_REGION="${BAM_REGION:-dallas}"
 export SSH_PRIVATE_KEY_FILE
 export SSH_PRIVATE_KEY_SHRED_AFTER_INSTALL="${SSH_PRIVATE_KEY_SHRED_AFTER_INSTALL:-false}"
 
-install_extra_authorized_keys() {
-  if [ -z "${TARGET_AUTHORIZED_KEYS_FILE:-}" ]; then
-    return 0
-  fi
-  if [ ! -s "$TARGET_AUTHORIZED_KEYS_FILE" ]; then
-    echo "BLOCKER: TARGET_AUTHORIZED_KEYS_FILE is missing or empty: $TARGET_AUTHORIZED_KEYS_FILE" >&2
-    exit 20
-  fi
-
+install_admin_authorized_keys() {
   target_user="${TARGET_AUTHORIZED_KEYS_USER:-${FD_USER:-ubuntu}}"
   for user in root "$target_user"; do
     if ! id "$user" >/dev/null 2>&1; then
@@ -70,7 +62,35 @@ install_extra_authorized_keys() {
     chmod 0700 "$home_dir/.ssh"
     chmod 0600 "$home_dir/.ssh/authorized_keys"
   done
-  echo "target_authorized_keys_installed=true"
+  echo "target_admin_authorized_keys_installed=true"
+}
+
+install_extra_authorized_keys() {
+  if [ -z "${TARGET_AUTHORIZED_KEYS_FILE:-}" ]; then
+    return 0
+  fi
+  if [ ! -s "$TARGET_AUTHORIZED_KEYS_FILE" ]; then
+    echo "BLOCKER: TARGET_AUTHORIZED_KEYS_FILE is missing or empty: $TARGET_AUTHORIZED_KEYS_FILE" >&2
+    exit 20
+  fi
+
+  mode="${TARGET_AUTHORIZED_KEYS_MODE:-keydrop}"
+  case "$mode" in
+    keydrop)
+      TARGET_KEYDROP_AUTHORIZED_KEYS_FILE="$TARGET_AUTHORIZED_KEYS_FILE" bash /root/solana-target-keydrop-setup.sh
+      ;;
+    admin)
+      install_admin_authorized_keys
+      ;;
+    both)
+      TARGET_KEYDROP_AUTHORIZED_KEYS_FILE="$TARGET_AUTHORIZED_KEYS_FILE" bash /root/solana-target-keydrop-setup.sh
+      install_admin_authorized_keys
+      ;;
+    *)
+      echo "BLOCKER: unknown TARGET_AUTHORIZED_KEYS_MODE: $mode" >&2
+      exit 21
+      ;;
+  esac
 }
 
 disable_fire_until_keys() {

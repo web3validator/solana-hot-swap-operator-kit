@@ -169,7 +169,7 @@ sudo -n env HOTSWAP_ENV_FILE=/etc/solana-hotswap/hotswap.env CONFIRM_DELETE_SERV
 - cherry-wait-ssh: waits 15 minutes from create by default, then checks SSH every 2 minutes.
 - Target bootstrap auto-detects root-capable SSH: it prefers root and uses ubuntu only if passwordless sudo works, unless CHERRY_TARGET_USER is set explicitly.
 - Target bootstrap runs inside tmux by default. Attach on the target with `tmux attach -t solana-bootstrap`.
-- If `CHERRY_TARGET_AUTHORIZED_KEYS_FILE` is set, bootstrap appends those public keys to both `root` and the target validator user authorized_keys after Firedancer setup.
+- If `CHERRY_TARGET_AUTHORIZED_KEYS_FILE` is set, bootstrap creates a restricted `solana-keydrop` SFTP-only chroot user by default. Uploaded validator keys land in `/var/lib/solana-keydrop/incoming`; they do not grant shell/root access.
 - After successful bootstrap, the one-shot flow disables `fire`/`sync-monitor` until keys are staged, reboots the target by default, waits for SSH to return, verifies again, and sends Telegram notification that the target is ready for key staging.
 - Bootstrap status file: `/root/solana-cherry-bootstrap.status`.
 - Bootstrap tmux log: `/root/solana-cherry-bootstrap.tmux.log`.
@@ -194,19 +194,35 @@ sudo -n env HOTSWAP_ENV_FILE=/etc/solana-hotswap/hotswap.env CONFIRM_DELETE_SERV
 
 ## Identity handoff
 
-After target bootstrap and reboot pass, key staging/start/sync is a separate operation:
+After target bootstrap and reboot pass, upload keypairs from the source/main-sol host through the restricted SFTP-only user. Live public target IPs must be supplied at runtime only, never committed to git.
+
+Preferred manual source-side dry-run on main-sol:
+
+```bash
+TARGET_IP=REPLACE_WITH_TARGET_IP \
+  /path/to/solana-hot-swap-operator-kit/scripts/solana-source-upload-keys.sh --dry-run
+```
+
+Then execute manually on main-sol:
+
+```bash
+TARGET_IP=REPLACE_WITH_TARGET_IP \
+  CONFIRM_SOLANA_KEY_UPLOAD=I_CONFIRM_SOLANA_KEY_UPLOAD \
+  /path/to/solana-hot-swap-operator-kit/scripts/solana-source-upload-keys.sh --execute
+```
+
+The operator/OpenClaw host should not run this source-side upload script and should never handle validator keypair contents.
+
+Then key staging/start/sync is a separate confirmed operation from the operator host:
 
 ```bash
 sudo -n env HOTSWAP_ENV_FILE=/etc/solana-hotswap/hotswap.env \
   TARGET_HOST=ubuntu@REPLACE_WITH_TARGET_IP \
-  STAKED_IDENTITY_FILE=/path/to/staked-identity.json \
-  SECONDARY_UNSTAKED_IDENTITY_FILE=/path/to/secondary-unstaked-identity.json \
-  VOTE_KEYPAIR_FILE=/path/to/vote-account-keypair.json \
   CONFIRM_TARGET_STAGE_START=I_CONFIRM_TARGET_STAGE_START \
-  /opt/solana-hot-swap-operator-kit/scripts/solana-target-stage-start-sync.sh --execute --all
+  /opt/solana-hot-swap-operator-kit/scripts/solana-target-stage-start-sync.sh --execute --all-from-keydrop
 ```
 
-This copies keypairs to `/home/ubuntu/keys`, runs `setup-ramdisk-keys.sh`, enables and starts `fire.service`, waits for sync/catchup, and sends Telegram notification when the target is ready for identity handoff.
+This moves keypairs from keydrop incoming to `/home/ubuntu/keys`, runs `setup-ramdisk-keys.sh`, shreds/removes incoming copies by default, enables and starts `fire.service`, waits for sync/catchup, and sends Telegram notification when the target is ready for identity handoff.
 
 After target bootstrap/catchup gates pass, use `docs/identity-handoff.md` and `scripts/solana-identity-handoff.sh` for the guarded `set-identity`, tower copy, and remote `set-identity --require-tower` flow.
 

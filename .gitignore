@@ -3,6 +3,9 @@
 !.env.example
 !examples/env.example
 !examples/*.example.json
+*.private.md
+*.private.env
+*.local.env
 runs/
 runlogs/
 memory/runlogs/

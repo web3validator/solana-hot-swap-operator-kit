@@ -3,13 +3,14 @@ set -euo pipefail
 
 env_file="${HOTSWAP_ENV_FILE:-/etc/solana-hotswap/hotswap.env}"
 do_stage=0
+do_stage_from_keydrop=0
 do_start=0
 do_wait_sync=0
 execute=0
 
 usage() {
   printf '%s\n' \
-    'Usage: scripts/solana-target-stage-start-sync.sh [--dry-run] [--execute] [--stage-keys] [--start] [--wait-sync] [--all]' \
+    'Usage: scripts/solana-target-stage-start-sync.sh [--dry-run] [--execute] [--stage-keys|--stage-from-keydrop] [--start] [--wait-sync] [--all|--all-from-keydrop]' \
     '' \
     'Stages validator keypairs on a bootstrapped Cherry target, starts fire.service, and optionally waits for sync.' \
     'Default is dry-run. --execute requires CONFIRM_TARGET_STAGE_START=I_CONFIRM_TARGET_STAGE_START.' \
@@ -22,6 +23,9 @@ usage() {
     '  STAKED_IDENTITY_FILE=/path/to/staked-identity.json' \
     '  SECONDARY_UNSTAKED_IDENTITY_FILE=/path/to/secondary-unstaked-identity.json' \
     '  VOTE_KEYPAIR_FILE=/path/to/vote-account-keypair.json' \
+    '' \
+    'For --stage-from-keydrop, upload files first as solana-keydrop@target:' \
+    '  staked-identity.json, secondary-unstaked-identity.json, vote-account-keypair.json' \
     '' \
     'Defaults:' \
     '  TARGET_KEYS_DIR=/home/ubuntu/keys' \
@@ -40,6 +44,9 @@ while [ "$#" -gt 0 ]; do
     --stage-keys)
       do_stage=1
       ;;
+    --stage-from-keydrop)
+      do_stage_from_keydrop=1
+      ;;
     --start)
       do_start=1
       ;;
@@ -48,6 +55,11 @@ while [ "$#" -gt 0 ]; do
       ;;
     --all)
       do_stage=1
+      do_start=1
+      do_wait_sync=1
+      ;;
+    --all-from-keydrop)
+      do_stage_from_keydrop=1
       do_start=1
       do_wait_sync=1
       ;;
@@ -85,6 +97,7 @@ ssh_key="${TARGET_SSH_KEY:-${CHERRY_SSH_KEY:-}}"
 known_hosts="${CHERRY_KNOWN_HOSTS:-runs/known_hosts}"
 connect_timeout="${SSH_CONNECT_TIMEOUT:-8}"
 target_keys_dir="${TARGET_KEYS_DIR:-/home/ubuntu/keys}"
+target_keydrop_incoming_dir="${TARGET_KEYDROP_INCOMING_DIR:-/var/lib/solana-keydrop/incoming}"
 target_service="${TARGET_SERVICE:-fire}"
 sync_timeout="${TARGET_SYNC_TIMEOUT_SECONDS:-21600}"
 sync_interval="${TARGET_SYNC_INTERVAL_SECONDS:-120}"
@@ -110,6 +123,11 @@ require_file() {
   fi
 }
 
+if [ "$do_stage" -eq 1 ] && [ "$do_stage_from_keydrop" -eq 1 ]; then
+  echo "BLOCKER: choose only one of --stage-keys or --stage-from-keydrop" >&2
+  exit 2
+fi
+
 if [ "$do_stage" -eq 1 ] && [ "$execute" -eq 1 ]; then
   : "${STAKED_IDENTITY_FILE:?missing STAKED_IDENTITY_FILE}"
   : "${SECONDARY_UNSTAKED_IDENTITY_FILE:?missing SECONDARY_UNSTAKED_IDENTITY_FILE}"
@@ -121,11 +139,13 @@ fi
 
 printf 'target_host=%s\n' "$target_host"
 printf 'target_keys_dir=%s\n' "$target_keys_dir"
+printf 'target_keydrop_incoming_dir=%s\n' "$target_keydrop_incoming_dir"
 printf 'target_service=%s\n' "$target_service"
 printf 'staked_identity_file=%s\n' "${STAKED_IDENTITY_FILE:-<unset>}"
 printf 'secondary_unstaked_identity_file=%s\n' "${SECONDARY_UNSTAKED_IDENTITY_FILE:-<unset>}"
 printf 'vote_keypair_file=%s\n' "${VOTE_KEYPAIR_FILE:-<unset>}"
 printf 'stage_keys=%s\n' "$do_stage"
+printf 'stage_from_keydrop=%s\n' "$do_stage_from_keydrop"
 printf 'start_service=%s\n' "$do_start"
 printf 'wait_sync=%s\n' "$do_wait_sync"
 printf 'execute=%s\n' "$execute"
@@ -142,13 +162,20 @@ if [ "${CONFIRM_TARGET_STAGE_START:-}" != "I_CONFIRM_TARGET_STAGE_START" ]; then
 fi
 
 if [ "$do_stage" -eq 1 ]; then
-  echo "== stage keypairs on target =="
+  echo "== stage keypairs on target from local files =="
   ssh "${ssh_args[@]}" "$target_host" "install -d -m 0700 $(remote_quote "$target_keys_dir")"
   scp "${ssh_args[@]}" "$STAKED_IDENTITY_FILE" "$target_host:$target_keys_dir/staked-identity.json"
   scp "${ssh_args[@]}" "$SECONDARY_UNSTAKED_IDENTITY_FILE" "$target_host:$target_keys_dir/secondary-unstaked-identity.json"
   scp "${ssh_args[@]}" "$VOTE_KEYPAIR_FILE" "$target_host:$target_keys_dir/vote-account-keypair.json"
   ssh "${ssh_args[@]}" "$target_host" "chmod 0600 $(remote_quote "$target_keys_dir")/*.json && /home/ubuntu/setup-ramdisk-keys.sh && find /mnt/ramdisk -maxdepth 1 -type f -name '*.json' -printf '%f staged\\n'"
   notify "Cherry target keypairs staged on $target_host. Ready to start ${target_service}."
+fi
+
+if [ "$do_stage_from_keydrop" -eq 1 ]; then
+  echo "== stage keypairs on target from keydrop incoming =="
+  scp "${ssh_args[@]}" "$repo_root/scripts/solana-target-stage-keydrop-remote.sh" "$target_host:/tmp/solana-target-stage-keydrop-remote.sh"
+  ssh "${ssh_args[@]}" "$target_host" "sudo -n install -m 0700 /tmp/solana-target-stage-keydrop-remote.sh /root/solana-target-stage-keydrop-remote.sh && rm -f /tmp/solana-target-stage-keydrop-remote.sh && sudo -n env TARGET_KEYDROP_INCOMING_DIR=$(remote_quote "$target_keydrop_incoming_dir") TARGET_KEYS_DIR=$(remote_quote "$target_keys_dir") TARGET_KEYDROP_SHRED_AFTER_STAGE=$(remote_quote "${TARGET_KEYDROP_SHRED_AFTER_STAGE:-true}") bash /root/solana-target-stage-keydrop-remote.sh"
+  notify "Cherry target keypairs staged from keydrop on $target_host. Ready to start ${target_service}."
 fi
 
 if [ "$do_start" -eq 1 ]; then
