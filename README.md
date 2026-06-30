@@ -178,6 +178,9 @@ Stop the attempt if any of these are true:
 - `docs/cherry-provider.md` — Cherry Servers API, payload, RAID, and billing gates.
 - `docs/deployment.md` — clean server install and systemd worker usage.
 - `docs/openclaw-chatgpt.md` — optional OpenClaw Gateway and ChatGPT/Codex relay setup without OmniRoute.
+- `docs/openclaw-agent-playbook.md` — OpenClaw/Telegram agent launch contract, including mandatory Firedancer version confirmation.
+- `docs/mainnet-cherry-run-context.md` — mainnet Cherry one-shot flow context and gates.
+- `docs/identity-handoff.md` — guarded `fdctl set-identity`, tower copy, and `--require-tower` handoff flow.
 - `docs/security.md` — public repo boundary, secrets, keys, tower handling.
 - `docs/smoke-test.md` — clean VM validation checklist.
 - `docs/troubleshooting.md` — common blockers and recovery paths.

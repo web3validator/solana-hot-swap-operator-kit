@@ -39,6 +39,12 @@ systemctl is-active openclaw-gateway.service openclaw-codex-relay.service
 systemctl is-active omniroute.service || true
 curl -fsS http://127.0.0.1:20129/health
 
+## OpenClaw agent playbook
+
+OpenClaw/Telegram agents should first read `docs/openclaw-agent-playbook.md`.
+
+Critical rule: before any create/bootstrap run, the agent must ask the operator to confirm the Firedancer `FD_VERSION` or provide a new tag. It must also ask for explicit paid Cherry server confirmation before create.
+
 ## Private env owns provider and bootstrap values
 
 The real values live in /etc/solana-hotswap/hotswap.env, not in git.
