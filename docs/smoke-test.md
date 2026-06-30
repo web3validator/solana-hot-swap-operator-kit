@@ -75,7 +75,16 @@ BLOCKER: CHERRY_SSH_KEY_ID must be an integer
 
 Expected result: commands are printed but no files are installed.
 
-## 8. OpenClaw installer help
+## 8. Import and one-shot script help
+
+```bash
+./scripts/import-cherry-reference.sh --help
+./scripts/cherry-mainnet-one-shot.sh --help
+```
+
+Expected result: usage is printed. Full import requires SSH access to a reference host.
+
+## 9. OpenClaw installer help
 
 ```bash
 ./scripts/install-openclaw-chatgpt.sh --help
@@ -83,7 +92,7 @@ Expected result: commands are printed but no files are installed.
 
 Expected result: usage is printed. Full dry-run requires an installed OpenClaw CLI and Node.js 18+.
 
-## 9. Systemd syntax
+## 10. Systemd syntax
 
 On a systemd host:
 

@@ -11,7 +11,7 @@ The guard uses Cherry Servers API v1:
 - `POST /v1/servers/{serverId}/actions`
 - `DELETE /v1/servers/{serverId}`
 
-Authentication uses a bearer token. The kit accepts `CHERRY_KEY`, `CHERRY_AUTH_TOKEN`, or `CHERRY_API_TOKEN`; prefer `CHERRY_KEY` in `.env`.
+Authentication uses a bearer token. The kit accepts `CHERRY_KEY`, `CHERRY_AUTH_TOKEN`, `CHERRY_API_TOKEN`, or `JWT`; prefer `CHERRY_KEY` in `.env`.
 
 ## Required environment
 
@@ -23,6 +23,33 @@ CHERRY_PLAN=amd-ryzen-9950x
 CHERRY_REGION=LT-Siauliai
 CHERRY_IMAGE=ubuntu_24_04_64bit
 CHERRY_HOSTNAME=solana-hotswap
+```
+
+## Import from a reference host
+
+If an older operator host already has the Cherry bearer token, SSH key, and successful order metadata, import that private state locally instead of committing secrets:
+
+```bash
+REFERENCE_HOST=user@reference-host ./scripts/import-cherry-reference.sh --dry-run
+sudo REFERENCE_HOST=user@reference-host ./scripts/import-cherry-reference.sh --apply
+```
+
+The import writes:
+
+- `/etc/solana-hotswap/hotswap.env` with the Cherry bearer token and last known successful order shape;
+- the matching Cherry SSH private key under `/home/sol/.ssh/` by default;
+- no secrets into the repository.
+
+After import, review the plan:
+
+```bash
+sudo ./scripts/cherry-mainnet-one-shot.sh --plan
+```
+
+Create only with an explicit paid action:
+
+```bash
+sudo ./scripts/cherry-mainnet-one-shot.sh --create
 ```
 
 ## Empty project gate

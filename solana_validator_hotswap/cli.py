@@ -344,7 +344,9 @@ def api_base() -> str:
 
 
 def api_request(method: str, path: str, body=None):
-    token = require_env_any("CHERRY_KEY", "CHERRY_AUTH_TOKEN", "CHERRY_API_TOKEN")
+    token = require_env_any(
+        "CHERRY_KEY", "CHERRY_AUTH_TOKEN", "CHERRY_API_TOKEN", "JWT"
+    )
     url = f"{api_base()}/{path.lstrip('/')}"
     data = None
     if body is not None:
@@ -409,6 +411,9 @@ def cherry_order_payload() -> dict:
             "rental_cap": env("CHERRY_RENTAL_CAP", "120m"),
         },
     }
+    network_tag = env("CHERRY_TAG_NETWORK")
+    if network_tag:
+        payload["tags"]["network"] = network_tag
     variants = default_variant_ids()
     if variants:
         payload["variant_ids"] = variants
@@ -505,7 +510,9 @@ def cmd_show_config(_args) -> None:
             "region": env("CHERRY_REGION", "LT-Siauliai"),
             "image": env("CHERRY_IMAGE", "ubuntu_24_04_64bit"),
             "ssh_key_id": env("CHERRY_SSH_KEY_ID"),
-            "token_present": bool(env_any(("CHERRY_KEY", "CHERRY_AUTH_TOKEN", "CHERRY_API_TOKEN"))),
+            "token_present": bool(
+                env_any(("CHERRY_KEY", "CHERRY_AUTH_TOKEN", "CHERRY_API_TOKEN", "JWT"))
+            ),
         },
     }
     print_json(data)
@@ -564,6 +571,15 @@ def attempt_dir() -> Path:
     return p
 
 
+def write_state_file(
+    state_file: Path, values: dict[str, str], comments: list[str] | None = None
+) -> None:
+    lines = [f"export {key}={value}" for key, value in values.items()]
+    for comment in comments or []:
+        lines.append(f"# {comment}")
+    state_file.write_text("\n".join(lines) + "\n")
+
+
 def cmd_cherry_create(_args) -> None:
     if env("CONFIRM_PAID_CHERRY_CREATE") != "I_CONFIRM_ONE_HOURLY_SERVER":
         fail(
@@ -587,8 +603,10 @@ def cmd_cherry_create(_args) -> None:
     sid = str(server.get("id") or server.get("server_id") or "")
     ip = extract_ip(server)
     created_epoch = int(time.time())
-    state_file.write_text(
-        f"export SERVER_ID={sid}\nexport SERVER_IP={ip}\nexport CREATED_AT_EPOCH={created_epoch}\n# payload_file={payload_file}\n# response_file={response_file}\n"
+    write_state_file(
+        state_file,
+        {"SERVER_ID": sid, "SERVER_IP": ip, "CREATED_AT_EPOCH": str(created_epoch)},
+        [f"payload_file={payload_file}", f"response_file={response_file}"],
     )
     print(f"state_file={state_file}")
     print(f"export SERVER_ID={sid}")
@@ -597,6 +615,46 @@ def cmd_cherry_create(_args) -> None:
     if not sid:
         fail("could not parse server id from Cherry create response")
     print("NEXT: wait until SERVER_IP is reachable, then run attempt-after-create.")
+
+
+def update_state_file_ip(state_file: Path, server_ip_value: str) -> None:
+    if not state_file.exists():
+        return
+    lines = state_file.read_text().splitlines()
+    out: list[str] = []
+    seen = False
+    for line in lines:
+        if line.startswith("export SERVER_IP="):
+            out.append(f"export SERVER_IP={server_ip_value}")
+            seen = True
+        else:
+            out.append(line)
+    if not seen:
+        out.append(f"export SERVER_IP={server_ip_value}")
+    state_file.write_text("\n".join(out) + "\n")
+
+
+def cmd_cherry_wait_ip(args) -> None:
+    sid = server_id()
+    deadline = time.time() + int(args.timeout_seconds)
+    interval = int(args.interval_seconds)
+    last_state = ""
+    while time.time() <= deadline:
+        data, _ = api_request("GET", f"servers/{sid}")
+        server = extract_server(data)
+        ip = extract_ip(server)
+        state = str(server.get("state") or server.get("status") or "")
+        if state != last_state:
+            print(f"server_state={state or 'unknown'}")
+            last_state = state
+        if ip:
+            print(f"export SERVER_IP={ip}")
+            if args.state_file:
+                update_state_file_ip(Path(args.state_file), ip)
+                print(f"state_file_updated={args.state_file}")
+            return
+        time.sleep(interval)
+    fail(f"SERVER_IP was not assigned within {args.timeout_seconds}s", 34)
 
 
 def cmd_cherry_actions(_args) -> None:
@@ -830,6 +888,7 @@ def build_parser() -> argparse.ArgumentParser:
         "cherry-balance": cmd_cherry_balance,
         "cherry-create": cmd_cherry_create,
         "cherry-actions": cmd_cherry_actions,
+        "cherry-wait-ip": cmd_cherry_wait_ip,
         "cherry-rebuild-payload": cmd_cherry_rebuild_payload,
         "cherry-verify": cmd_cherry_verify,
         "post-bootstrap-verify": cmd_post_bootstrap_verify,
@@ -843,6 +902,10 @@ def build_parser() -> argparse.ArgumentParser:
     }
     for name, func in commands.items():
         p = sub.add_parser(name)
+        if name == "cherry-wait-ip":
+            p.add_argument("--timeout-seconds", default="1800")
+            p.add_argument("--interval-seconds", default="30")
+            p.add_argument("--state-file", default="")
         p.set_defaults(func=func)
     p = sub.add_parser("deadline")
     p.add_argument("--created-at-epoch", default="")

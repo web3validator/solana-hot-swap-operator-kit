@@ -58,6 +58,9 @@ solana-hot-swap-operator-kit/
     openclaw-codex-relay.mjs
   scripts/
     install.sh
+    cherry-mainnet-one-shot.sh
+    import-cherry-reference.sh
+    import_cherry_reference.py
     install-openclaw-chatgpt.sh
     openclaw_config_cleanup.py
     solana-cherry-hotswap-guard.sh
@@ -100,6 +103,16 @@ Create one paid hourly Cherry server only after explicit approval:
 CONFIRM_PAID_CHERRY_CREATE=I_CONFIRM_ONE_HOURLY_SERVER \
   ./scripts/solana-cherry-hotswap-guard.sh cherry-create
 ```
+
+If you are migrating private Cherry configuration from a previously used reference host, import it into the local private env first:
+
+```bash
+REFERENCE_HOST=user@reference-host ./scripts/import-cherry-reference.sh --dry-run
+sudo REFERENCE_HOST=user@reference-host ./scripts/import-cherry-reference.sh --apply
+sudo ./scripts/cherry-mainnet-one-shot.sh --plan
+```
+
+`--create` is intentionally separate because it starts a paid hourly server.
 
 Delete only with exact server id confirmation:
 

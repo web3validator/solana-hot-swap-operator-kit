@@ -35,6 +35,8 @@ Accepted token variables:
 
 Do not put tokens in shell history, systemd unit files, issue trackers, chat, screenshots, or committed examples.
 
+When using `scripts/import-cherry-reference.sh`, the imported token is written only to `/etc/solana-hotswap/hotswap.env` and the imported Cherry SSH private key is written only to the configured local SSH key path. Do not commit either file.
+
 ## Validator key material
 
 This kit does not automate production key transfer.
