@@ -11,7 +11,7 @@ usage() {
     'Usage: scripts/solana-source-upload-keys.sh [--dry-run] [--execute] [--target-ip IP|--target-host USER@HOST] [TARGET_IP]' \
     '' \
     'Run manually on the current source/main-sol validator host.' \
-    'Uploads validator keypairs directly to a Cherry target restricted keydrop user.' \
+    'Uploads validator keypairs directly to a Cherry target restricted keydrop user over SFTP.' \
     'The operator/OpenClaw host should not run this script and should never handle these key files.' \
     '' \
     'Default local files:' \
@@ -137,11 +137,10 @@ printf 'known_hosts=%s\n' "$known_hosts"
 printf 'execute=%s\n' "$([ "$mode" = "execute" ] && printf 1 || printf 0)"
 
 printf '\n== planned upload ==\n'
-printf 'scp -p %q %q %q %q:\n' \
-  "$staked_identity_file" \
-  "$secondary_unstaked_identity_file" \
-  "$vote_keypair_file" \
-  "$target_host"
+printf 'sftp -b generated-batch %q\n' "$target_host"
+printf '  put -p %q staked-identity.json\n' "$staked_identity_file"
+printf '  put -p %q secondary-unstaked-identity.json\n' "$secondary_unstaked_identity_file"
+printf '  put -p %q vote-account-keypair.json\n' "$vote_keypair_file"
 
 if [ "$mode" != "execute" ]; then
   echo "dry_run=true"
@@ -158,11 +157,18 @@ mkdir -p "$(dirname "$known_hosts")"
 touch "$known_hosts"
 chmod 0600 "$known_hosts" 2>/dev/null || true
 
-echo "== upload keypairs to restricted keydrop target =="
-scp -p "${ssh_args[@]}" \
-  "$staked_identity_file" \
-  "$secondary_unstaked_identity_file" \
-  "$vote_keypair_file" \
-  "$target_host:"
+batch_file="$(mktemp)"
+cleanup() {
+  rm -f "$batch_file"
+}
+trap cleanup EXIT
+{
+  printf 'put -p "%s" staked-identity.json\n' "$staked_identity_file"
+  printf 'put -p "%s" secondary-unstaked-identity.json\n' "$secondary_unstaked_identity_file"
+  printf 'put -p "%s" vote-account-keypair.json\n' "$vote_keypair_file"
+} > "$batch_file"
+
+echo "== upload keypairs to restricted keydrop target over SFTP =="
+sftp "${ssh_args[@]}" -b "$batch_file" "$target_host"
 
 echo "solana_key_upload=ok"
