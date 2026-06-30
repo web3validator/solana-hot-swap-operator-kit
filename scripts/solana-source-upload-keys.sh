@@ -113,11 +113,15 @@ if any(not isinstance(item, int) or item < 0 or item > 255 for item in data):
     raise SystemExit(f"BLOCKER: {path} has non-byte values")' "$1"
 }
 
-warn_if_broad_permissions() {
+check_key_permissions() {
   path="$1"
   if mode_bits="$(stat -c '%a' "$path" 2>/dev/null)"; then
     if [ $((8#$mode_bits & 077)) -ne 0 ]; then
-      printf 'WARN: broad permissions on %s: %s\n' "$path" "$mode_bits" >&2
+      if [ "$mode" = "execute" ]; then
+        printf 'BLOCKER: broad permissions on %s: %s; run chmod 600 before upload\n' "$path" "$mode_bits" >&2
+        exit 5
+      fi
+      printf 'WARN: broad permissions on %s: %s; run chmod 600 before execute\n' "$path" "$mode_bits" >&2
     fi
   fi
 }
@@ -125,7 +129,7 @@ warn_if_broad_permissions() {
 for file in "$staked_identity_file" "$secondary_unstaked_identity_file" "$vote_keypair_file"; do
   require_file "$file"
   validate_keypair_json "$file"
-  warn_if_broad_permissions "$file"
+  check_key_permissions "$file"
 done
 
 printf 'upload_mode=%s\n' "$mode"
