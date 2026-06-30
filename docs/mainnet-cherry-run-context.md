@@ -21,6 +21,7 @@ Do not put real Cherry tokens, SSH private keys, validator keypairs, tower files
 - Installed runtime copy: /opt/solana-hot-swap-operator-kit
 - Private env: /etc/solana-hotswap/hotswap.env
 - Cherry SSH key path: value of CHERRY_SSH_KEY
+- Extra target authorized keys file: value of CHERRY_TARGET_AUTHORIZED_KEYS_FILE
 - Run state dir: value of HOTSWAP_RUN_DIR
 - Cherry known_hosts file: value of CHERRY_KNOWN_HOSTS
 - Private live context: runs/mainnet-cherry-run-context.private.md or another ignored local note file
@@ -64,8 +65,9 @@ Required Cherry/provider values:
 - CHERRY_TAG_NETWORK
 - CHERRY_TAG_OWNER
 - CHERRY_TAG_CREATED_BY
-- CHERRY_RENTAL_CAP
-- one of CHERRY_KEY, CHERRY_AUTH_TOKEN, CHERRY_API_TOKEN, or JWT
+- `CHERRY_RENTAL_CAP`
+- `CHERRY_TARGET_AUTHORIZED_KEYS_FILE` optional private file containing OpenSSH public keys allowed into every Cherry target
+- one of `CHERRY_KEY`, `CHERRY_AUTH_TOKEN`, `CHERRY_API_TOKEN`, or `JWT`
 
 Required target bootstrap values:
 
@@ -81,8 +83,10 @@ Required target bootstrap values:
 - CHERRY_BOOTSTRAP_TMUX, default true
 - CHERRY_BOOTSTRAP_SESSION, default solana-bootstrap
 - CHERRY_BOOTSTRAP_FOLLOW, default true
-- CHERRY_BOOTSTRAP_TIMEOUT_SECONDS, default 14400
-- CHERRY_BOOTSTRAP_MONITOR_INTERVAL_SECONDS, default 120
+- `CHERRY_BOOTSTRAP_TIMEOUT_SECONDS`, default `14400`
+- `CHERRY_BOOTSTRAP_MONITOR_INTERVAL_SECONDS`, default `120`
+- `CHERRY_REBOOT_AFTER_BOOTSTRAP`, default `true`
+- `TELEGRAM_CHAT_ID` plus `TELEGRAM_BOT_TOKEN` or `TELEGRAM_BOT_TOKEN_FILE` for notifications
 
 Source-preflight values are not required for Cherry create/bootstrap, but are required before a real validator handoff:
 
@@ -165,6 +169,8 @@ sudo -n env HOTSWAP_ENV_FILE=/etc/solana-hotswap/hotswap.env CONFIRM_DELETE_SERV
 - cherry-wait-ssh: waits 15 minutes from create by default, then checks SSH every 2 minutes.
 - Target bootstrap auto-detects root-capable SSH: it prefers root and uses ubuntu only if passwordless sudo works, unless CHERRY_TARGET_USER is set explicitly.
 - Target bootstrap runs inside tmux by default. Attach on the target with `tmux attach -t solana-bootstrap`.
+- If `CHERRY_TARGET_AUTHORIZED_KEYS_FILE` is set, bootstrap appends those public keys to both `root` and the target validator user authorized_keys after Firedancer setup.
+- After successful bootstrap, the one-shot flow disables `fire`/`sync-monitor` until keys are staged, reboots the target by default, waits for SSH to return, verifies again, and sends Telegram notification that the target is ready for key staging.
 - Bootstrap status file: `/root/solana-cherry-bootstrap.status`.
 - Bootstrap tmux log: `/root/solana-cherry-bootstrap.tmux.log`.
 - attempt-after-create: prints rental deadlines, provider actions, SSH/disk/no-RAID gate.
@@ -188,9 +194,23 @@ sudo -n env HOTSWAP_ENV_FILE=/etc/solana-hotswap/hotswap.env CONFIRM_DELETE_SERV
 
 ## Identity handoff
 
+After target bootstrap and reboot pass, key staging/start/sync is a separate operation:
+
+```bash
+sudo -n env HOTSWAP_ENV_FILE=/etc/solana-hotswap/hotswap.env \
+  TARGET_HOST=ubuntu@REPLACE_WITH_TARGET_IP \
+  STAKED_IDENTITY_FILE=/path/to/staked-identity.json \
+  SECONDARY_UNSTAKED_IDENTITY_FILE=/path/to/secondary-unstaked-identity.json \
+  VOTE_KEYPAIR_FILE=/path/to/vote-account-keypair.json \
+  CONFIRM_TARGET_STAGE_START=I_CONFIRM_TARGET_STAGE_START \
+  /opt/solana-hot-swap-operator-kit/scripts/solana-target-stage-start-sync.sh --execute --all
+```
+
+This copies keypairs to `/home/ubuntu/keys`, runs `setup-ramdisk-keys.sh`, enables and starts `fire.service`, waits for sync/catchup, and sends Telegram notification when the target is ready for identity handoff.
+
 After target bootstrap/catchup gates pass, use `docs/identity-handoff.md` and `scripts/solana-identity-handoff.sh` for the guarded `set-identity`, tower copy, and remote `set-identity --require-tower` flow.
 
-The script defaults to dry-run and requires `CONFIRM_SOLANA_IDENTITY_HANDOFF=I_CONFIRM_IDENTITY_HANDOFF` for execution.
+The handoff script defaults to dry-run and requires `CONFIRM_SOLANA_IDENTITY_HANDOFF=I_CONFIRM_IDENTITY_HANDOFF` for execution.
 
 ## If create is blocked by payment
 

@@ -149,6 +149,29 @@ remote_quote() {
   printf '%q' "$1"
 }
 
+notify_telegram() {
+  message="$1"
+  HOTSWAP_ENV_FILE="$env_file" "$repo_root/scripts/notify-telegram.sh" --message "$message" || true
+}
+
+post_bootstrap_reboot_and_notify() {
+  target="$1"
+  root_cmd="$2"
+  if [ "${CHERRY_REBOOT_AFTER_BOOTSTRAP:-true}" != "true" ]; then
+    notify_telegram "Cherry target bootstrap complete: ${SERVER_IP:-unknown}. Reboot disabled. Ready for key staging after operator verification."
+    return 0
+  fi
+
+  notify_telegram "Cherry target bootstrap complete: ${SERVER_IP:-unknown}. Rebooting now; I will notify when SSH is back."
+  echo "== reboot target after bootstrap =="
+  ssh "${ssh_args[@]}" "$target" "${root_cmd}reboot" >/dev/null 2>&1 || true
+  sleep "${CHERRY_REBOOT_INITIAL_WAIT_SECONDS:-30}"
+  ./scripts/solana-cherry-hotswap-guard.sh cherry-wait-ssh --timeout-seconds "${CHERRY_REBOOT_WAIT_SSH_TIMEOUT_SECONDS:-1800}" --interval-seconds "${CHERRY_REBOOT_WAIT_SSH_INTERVAL_SECONDS:-30}" --initial-delay-seconds 0
+  echo "== post-reboot verify =="
+  ./scripts/solana-cherry-hotswap-guard.sh post-bootstrap-verify
+  notify_telegram "Cherry target is ready after reboot: ${SERVER_IP:-unknown}. Firedancer bootstrap passed. Пересылай ключи на target, затем запускаем fire/sync stage."
+}
+
 bootstrap_target() {
   if [ -z "${SERVER_IP:-}" ]; then
     load_state_file
@@ -191,6 +214,12 @@ bootstrap_target() {
     root_env_cmd="sudo -n env"
   fi
 
+  extra_authorized_keys_file="${CHERRY_TARGET_AUTHORIZED_KEYS_FILE:-}"
+  if [ -n "$extra_authorized_keys_file" ] && [ ! -r "$extra_authorized_keys_file" ]; then
+    echo "BLOCKER: CHERRY_TARGET_AUTHORIZED_KEYS_FILE is not readable: $extra_authorized_keys_file" >&2
+    exit 6
+  fi
+
   bootstrap_env_file="$(mktemp)"
   {
     printf 'SOLANA_SETUP_REPO=%q\n' "$SOLANA_SETUP_REPO"
@@ -202,6 +231,11 @@ bootstrap_target() {
     printf 'BAM_REGION=%q\n' "${BAM_REGION:-dallas}"
     printf 'SSH_PRIVATE_KEY_SHRED_AFTER_INSTALL=%q\n' "${SSH_PRIVATE_KEY_SHRED_AFTER_INSTALL:-false}"
     printf 'SSH_PRIVATE_KEY_FILE=%q\n' "/root/.ssh-secrets/cherry-bootstrap-key"
+    printf 'TARGET_DISABLE_FIRE_UNTIL_KEYS=%q\n' "${TARGET_DISABLE_FIRE_UNTIL_KEYS:-true}"
+    if [ -n "$extra_authorized_keys_file" ]; then
+      printf 'TARGET_AUTHORIZED_KEYS_FILE=%q\n' "/root/.ssh-secrets/target-authorized-keys"
+      printf 'TARGET_AUTHORIZED_KEYS_USER=%q\n' "${FD_USER:-ubuntu}"
+    fi
   } > "$bootstrap_env_file"
 
   echo "== upload bootstrap assets to $target =="
@@ -211,8 +245,16 @@ bootstrap_target() {
   scp "${ssh_args[@]}" "$repo_root/scripts/solana-cherry-target-tmux-start.sh" "$target:/tmp/solana-cherry-target-tmux-start.sh"
   scp "${ssh_args[@]}" "$bootstrap_env_file" "$target:/tmp/solana-cherry-bootstrap.env"
   scp "${ssh_args[@]}" "${CHERRY_SSH_KEY:?missing CHERRY_SSH_KEY}" "$target:/tmp/cherry-bootstrap-key"
+  if [ -n "$extra_authorized_keys_file" ]; then
+    scp "${ssh_args[@]}" "$extra_authorized_keys_file" "$target:/tmp/target-authorized-keys"
+    extra_install=" && ${root_cmd}install -m 0600 /tmp/target-authorized-keys /root/.ssh-secrets/target-authorized-keys"
+    extra_cleanup=" /tmp/target-authorized-keys"
+  else
+    extra_install=""
+    extra_cleanup=""
+  fi
   rm -f "$bootstrap_env_file"
-  ssh "${ssh_args[@]}" "$target" "${root_cmd}install -m 0700 /tmp/solana-cherry-target-bootstrap.sh /root/solana-cherry-target-bootstrap.sh && ${root_cmd}install -m 0700 /tmp/solana-cherry-target-tmux-runner.sh /root/solana-cherry-target-tmux-runner.sh && ${root_cmd}install -m 0700 /tmp/solana-cherry-target-tmux-start.sh /root/solana-cherry-target-tmux-start.sh && ${root_cmd}install -m 0600 /tmp/solana-cherry-bootstrap.env /root/solana-cherry-bootstrap.env && ${root_cmd}install -m 0600 /tmp/cherry-bootstrap-key /root/.ssh-secrets/cherry-bootstrap-key && rm -f /tmp/solana-cherry-target-bootstrap.sh /tmp/solana-cherry-target-tmux-runner.sh /tmp/solana-cherry-target-tmux-start.sh /tmp/solana-cherry-bootstrap.env /tmp/cherry-bootstrap-key"
+  ssh "${ssh_args[@]}" "$target" "${root_cmd}install -m 0700 /tmp/solana-cherry-target-bootstrap.sh /root/solana-cherry-target-bootstrap.sh && ${root_cmd}install -m 0700 /tmp/solana-cherry-target-tmux-runner.sh /root/solana-cherry-target-tmux-runner.sh && ${root_cmd}install -m 0700 /tmp/solana-cherry-target-tmux-start.sh /root/solana-cherry-target-tmux-start.sh && ${root_cmd}install -m 0600 /tmp/solana-cherry-bootstrap.env /root/solana-cherry-bootstrap.env && ${root_cmd}install -m 0600 /tmp/cherry-bootstrap-key /root/.ssh-secrets/cherry-bootstrap-key${extra_install} && rm -f /tmp/solana-cherry-target-bootstrap.sh /tmp/solana-cherry-target-tmux-runner.sh /tmp/solana-cherry-target-tmux-start.sh /tmp/solana-cherry-bootstrap.env /tmp/cherry-bootstrap-key${extra_cleanup}"
 
   if [ "${CHERRY_BOOTSTRAP_TMUX:-true}" = "true" ]; then
     session="${CHERRY_BOOTSTRAP_SESSION:-solana-bootstrap}"
@@ -228,6 +270,7 @@ bootstrap_target() {
 
   echo "== post-bootstrap verify =="
   ./scripts/solana-cherry-hotswap-guard.sh post-bootstrap-verify
+  post_bootstrap_reboot_and_notify "$target" "$root_cmd"
 }
 
 run_create() {

@@ -33,5 +33,55 @@ export BAM_REGION="${BAM_REGION:-dallas}"
 export SSH_PRIVATE_KEY_FILE
 export SSH_PRIVATE_KEY_SHRED_AFTER_INSTALL="${SSH_PRIVATE_KEY_SHRED_AFTER_INSTALL:-false}"
 
+install_extra_authorized_keys() {
+  if [ -z "${TARGET_AUTHORIZED_KEYS_FILE:-}" ]; then
+    return 0
+  fi
+  if [ ! -s "$TARGET_AUTHORIZED_KEYS_FILE" ]; then
+    echo "BLOCKER: TARGET_AUTHORIZED_KEYS_FILE is missing or empty: $TARGET_AUTHORIZED_KEYS_FILE" >&2
+    exit 20
+  fi
+
+  target_user="${TARGET_AUTHORIZED_KEYS_USER:-${FD_USER:-ubuntu}}"
+  for user in root "$target_user"; do
+    if ! id "$user" >/dev/null 2>&1; then
+      echo "WARN: cannot install authorized_keys for missing user: $user" >&2
+      continue
+    fi
+    home_dir="$(getent passwd "$user" | cut -d: -f6)"
+    if [ -z "$home_dir" ] || [ ! -d "$home_dir" ]; then
+      echo "WARN: cannot determine home dir for user: $user" >&2
+      continue
+    fi
+    install -d -m 0700 "$home_dir/.ssh"
+    touch "$home_dir/.ssh/authorized_keys"
+    while IFS= read -r key; do
+      [ -n "$key" ] || continue
+      case "$key" in
+        ssh-ed25519\ *|ssh-rsa\ *|ecdsa-sha2-*\ *) ;;
+        *)
+          echo "WARN: skipping non-OpenSSH public key line for $user" >&2
+          continue
+          ;;
+      esac
+      grep -qxF "$key" "$home_dir/.ssh/authorized_keys" || printf '%s\n' "$key" >> "$home_dir/.ssh/authorized_keys"
+    done < "$TARGET_AUTHORIZED_KEYS_FILE"
+    chown -R "$user:$user" "$home_dir/.ssh"
+    chmod 0700 "$home_dir/.ssh"
+    chmod 0600 "$home_dir/.ssh/authorized_keys"
+  done
+  echo "target_authorized_keys_installed=true"
+}
+
+disable_fire_until_keys() {
+  if [ "${TARGET_DISABLE_FIRE_UNTIL_KEYS:-true}" != "true" ]; then
+    return 0
+  fi
+  systemctl disable --now fire sync-monitor >/dev/null 2>&1 || true
+  echo "target_fire_disabled_until_keys=true"
+}
+
 bash fire-full-setup.sh "$FD_VERSION" "$FD_NETWORK" 2>&1 | tee "$log_path"
+install_extra_authorized_keys | tee -a "$log_path"
+disable_fire_until_keys | tee -a "$log_path"
 printf 'bootstrap_log=%s\n' "$log_path"

@@ -117,7 +117,11 @@ The wrapper should:
 - verify disk/no-RAID gate;
 - wait until minimum bootstrap age;
 - bootstrap inside target tmux;
-- run post-bootstrap verification.
+- run post-bootstrap verification;
+- reboot the target by default;
+- wait for SSH after reboot;
+- leave `fire`/`sync-monitor` disabled until key staging;
+- send Telegram notification that the target is ready for key staging.
 
 ## Target bootstrap tmux
 
@@ -144,6 +148,9 @@ The Cherry SSH key is managed through private env:
 
 - `CHERRY_SSH_KEY_ID`
 - `CHERRY_SSH_KEY`
+- `CHERRY_TARGET_AUTHORIZED_KEYS_FILE`
+
+`CHERRY_TARGET_AUTHORIZED_KEYS_FILE` is a private local file containing OpenSSH public keys that should be allowed into every Cherry target, for example the source mainnet host public key. The agent may print the file path and line count, but should not dump operator infrastructure keys unless the operator explicitly asks.
 
 The agent may verify these keys exist by printing only key names/paths or order payload, but must not print private key contents.
 
@@ -159,7 +166,21 @@ sudo -n /opt/solana-hot-swap-operator-kit/scripts/solana-cherry-hotswap-guard.sh
 
 Do not handoff identity automatically after bootstrap.
 
-Use:
+After bootstrap/reboot, key staging and start/sync are a separate explicit operation:
+
+```bash
+sudo -n env HOTSWAP_ENV_FILE=/etc/solana-hotswap/hotswap.env \
+  TARGET_HOST=ubuntu@REPLACE_WITH_TARGET_IP \
+  STAKED_IDENTITY_FILE=/path/to/staked-identity.json \
+  SECONDARY_UNSTAKED_IDENTITY_FILE=/path/to/secondary-unstaked-identity.json \
+  VOTE_KEYPAIR_FILE=/path/to/vote-account-keypair.json \
+  CONFIRM_TARGET_STAGE_START=I_CONFIRM_TARGET_STAGE_START \
+  /opt/solana-hot-swap-operator-kit/scripts/solana-target-stage-start-sync.sh --execute --all
+```
+
+This operation stages keypairs, enables and starts `fire.service`, waits for sync/catchup, and sends Telegram notification when the target is ready for identity handoff.
+
+For identity handoff use:
 
 - `docs/identity-handoff.md`
 - `scripts/solana-identity-handoff.sh`
