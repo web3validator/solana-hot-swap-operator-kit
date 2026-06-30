@@ -19,7 +19,9 @@ usage() {
     '' \
     'Environment overrides:' \
     '  HOTSWAP_ENV_FILE=/etc/solana-hotswap/hotswap.env' \
-    '  CHERRY_BOOTSTRAP_DELAY_SECONDS=1200'
+    '  CHERRY_BOOTSTRAP_DELAY_SECONDS=1200' \
+    '  CHERRY_BOOTSTRAP_TMUX=true' \
+    '  CHERRY_BOOTSTRAP_SESSION=solana-bootstrap'
 }
 
 while [ "$#" -gt 0 ]; do
@@ -181,16 +183,48 @@ bootstrap_target() {
   target="$target_user@$SERVER_IP"
   echo "cherry_bootstrap_ssh_user=$target_user"
 
+  if [ "$target_user" = "root" ]; then
+    root_cmd=""
+    root_env_cmd="env"
+  else
+    root_cmd="sudo -n "
+    root_env_cmd="sudo -n env"
+  fi
+
+  bootstrap_env_file="$(mktemp)"
+  {
+    printf 'SOLANA_SETUP_REPO=%q\n' "$SOLANA_SETUP_REPO"
+    printf 'SOLANA_SETUP_BRANCH=%q\n' "$SOLANA_SETUP_BRANCH"
+    printf 'FD_VERSION=%q\n' "$FD_VERSION"
+    printf 'FD_NETWORK=%q\n' "$FD_NETWORK"
+    printf 'SSH_ALLOW_CIDR=%q\n' "$SSH_ALLOW_CIDR"
+    printf 'FD_USER=%q\n' "${FD_USER:-ubuntu}"
+    printf 'BAM_REGION=%q\n' "${BAM_REGION:-dallas}"
+    printf 'SSH_PRIVATE_KEY_SHRED_AFTER_INSTALL=%q\n' "${SSH_PRIVATE_KEY_SHRED_AFTER_INSTALL:-false}"
+    printf 'SSH_PRIVATE_KEY_FILE=%q\n' "/root/.ssh-secrets/cherry-bootstrap-key"
+  } > "$bootstrap_env_file"
+
   echo "== upload bootstrap assets to $target =="
-  ssh "${ssh_args[@]}" "$target" "sudo install -d -m 0700 /root/.ssh-secrets"
+  ssh "${ssh_args[@]}" "$target" "${root_cmd}install -d -m 0700 /root/.ssh-secrets"
   scp "${ssh_args[@]}" "$repo_root/scripts/solana-cherry-target-bootstrap.sh" "$target:/tmp/solana-cherry-target-bootstrap.sh"
+  scp "${ssh_args[@]}" "$repo_root/scripts/solana-cherry-target-tmux-runner.sh" "$target:/tmp/solana-cherry-target-tmux-runner.sh"
+  scp "${ssh_args[@]}" "$repo_root/scripts/solana-cherry-target-tmux-start.sh" "$target:/tmp/solana-cherry-target-tmux-start.sh"
+  scp "${ssh_args[@]}" "$bootstrap_env_file" "$target:/tmp/solana-cherry-bootstrap.env"
   scp "${ssh_args[@]}" "${CHERRY_SSH_KEY:?missing CHERRY_SSH_KEY}" "$target:/tmp/cherry-bootstrap-key"
-  ssh "${ssh_args[@]}" "$target" "sudo install -m 0700 /tmp/solana-cherry-target-bootstrap.sh /root/solana-cherry-target-bootstrap.sh && sudo install -m 0600 /tmp/cherry-bootstrap-key /root/.ssh-secrets/cherry-bootstrap-key && rm -f /tmp/solana-cherry-target-bootstrap.sh /tmp/cherry-bootstrap-key"
+  rm -f "$bootstrap_env_file"
+  ssh "${ssh_args[@]}" "$target" "${root_cmd}install -m 0700 /tmp/solana-cherry-target-bootstrap.sh /root/solana-cherry-target-bootstrap.sh && ${root_cmd}install -m 0700 /tmp/solana-cherry-target-tmux-runner.sh /root/solana-cherry-target-tmux-runner.sh && ${root_cmd}install -m 0700 /tmp/solana-cherry-target-tmux-start.sh /root/solana-cherry-target-tmux-start.sh && ${root_cmd}install -m 0600 /tmp/solana-cherry-bootstrap.env /root/solana-cherry-bootstrap.env && ${root_cmd}install -m 0600 /tmp/cherry-bootstrap-key /root/.ssh-secrets/cherry-bootstrap-key && rm -f /tmp/solana-cherry-target-bootstrap.sh /tmp/solana-cherry-target-tmux-runner.sh /tmp/solana-cherry-target-tmux-start.sh /tmp/solana-cherry-bootstrap.env /tmp/cherry-bootstrap-key"
 
-  remote_cmd="SOLANA_SETUP_REPO=$(remote_quote "$SOLANA_SETUP_REPO") SOLANA_SETUP_BRANCH=$(remote_quote "$SOLANA_SETUP_BRANCH") FD_VERSION=$(remote_quote "$FD_VERSION") FD_NETWORK=$(remote_quote "$FD_NETWORK") SSH_ALLOW_CIDR=$(remote_quote "$SSH_ALLOW_CIDR") FD_USER=$(remote_quote "${FD_USER:-ubuntu}") BAM_REGION=$(remote_quote "${BAM_REGION:-dallas}") SSH_PRIVATE_KEY_SHRED_AFTER_INSTALL=$(remote_quote "${SSH_PRIVATE_KEY_SHRED_AFTER_INSTALL:-false}") SSH_PRIVATE_KEY_FILE=/root/.ssh-secrets/cherry-bootstrap-key sudo -E bash /root/solana-cherry-target-bootstrap.sh"
-
-  echo "== run target bootstrap =="
-  ssh "${ssh_args[@]}" "$target" "$remote_cmd"
+  if [ "${CHERRY_BOOTSTRAP_TMUX:-true}" = "true" ]; then
+    session="${CHERRY_BOOTSTRAP_SESSION:-solana-bootstrap}"
+    status_file="${CHERRY_BOOTSTRAP_STATUS_FILE:-/root/solana-cherry-bootstrap.status}"
+    tmux_log="${CHERRY_BOOTSTRAP_TMUX_LOG:-/root/solana-cherry-bootstrap.tmux.log}"
+    echo "== run target bootstrap in tmux =="
+    ssh "${ssh_args[@]}" "$target" "$root_env_cmd BOOTSTRAP_SESSION=$(remote_quote "$session") BOOTSTRAP_ENV_FILE=/root/solana-cherry-bootstrap.env BOOTSTRAP_STATUS_FILE=$(remote_quote "$status_file") BOOTSTRAP_TMUX_LOG=$(remote_quote "$tmux_log") BOOTSTRAP_FOLLOW=$(remote_quote "${CHERRY_BOOTSTRAP_FOLLOW:-true}") BOOTSTRAP_TIMEOUT_SECONDS=$(remote_quote "${CHERRY_BOOTSTRAP_TIMEOUT_SECONDS:-14400}") BOOTSTRAP_MONITOR_INTERVAL_SECONDS=$(remote_quote "${CHERRY_BOOTSTRAP_MONITOR_INTERVAL_SECONDS:-120}") BOOTSTRAP_RESTART_TMUX=$(remote_quote "${CHERRY_BOOTSTRAP_RESTART_TMUX:-false}") bash /root/solana-cherry-target-tmux-start.sh"
+  else
+    direct_script="set -a; . /root/solana-cherry-bootstrap.env; set +a; bash /root/solana-cherry-target-bootstrap.sh"
+    echo "== run target bootstrap directly =="
+    ssh "${ssh_args[@]}" "$target" "$root_env_cmd bash -lc $(remote_quote "$direct_script")"
+  fi
 
   echo "== post-bootstrap verify =="
   ./scripts/solana-cherry-hotswap-guard.sh post-bootstrap-verify

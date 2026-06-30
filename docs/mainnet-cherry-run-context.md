@@ -72,6 +72,11 @@ Required target bootstrap values:
 - SSH_ALLOW_CIDR
 - SSH_PRIVATE_KEY_SHRED_AFTER_INSTALL
 - CHERRY_BOOTSTRAP_DELAY_SECONDS
+- CHERRY_BOOTSTRAP_TMUX, default true
+- CHERRY_BOOTSTRAP_SESSION, default solana-bootstrap
+- CHERRY_BOOTSTRAP_FOLLOW, default true
+- CHERRY_BOOTSTRAP_TIMEOUT_SECONDS, default 14400
+- CHERRY_BOOTSTRAP_MONITOR_INTERVAL_SECONDS, default 120
 
 Source-preflight values are not required for Cherry create/bootstrap, but are required before a real validator handoff:
 
@@ -153,6 +158,9 @@ sudo -n env HOTSWAP_ENV_FILE=/etc/solana-hotswap/hotswap.env CONFIRM_DELETE_SERV
 - SERVER_IP: target SSH endpoint; wait for this before disk verification.
 - cherry-wait-ssh: waits 15 minutes from create by default, then checks SSH every 2 minutes.
 - Target bootstrap auto-detects root-capable SSH: it prefers root and uses ubuntu only if passwordless sudo works, unless CHERRY_TARGET_USER is set explicitly.
+- Target bootstrap runs inside tmux by default. Attach on the target with `tmux attach -t solana-bootstrap`.
+- Bootstrap status file: `/root/solana-cherry-bootstrap.status`.
+- Bootstrap tmux log: `/root/solana-cherry-bootstrap.tmux.log`.
 - attempt-after-create: prints rental deadlines, provider actions, SSH/disk/no-RAID gate.
 - cherry_disk_gate=ok: target disk layout is safe enough for bootstrap.
 - post-bootstrap-verify: checks target after bootstrap and shows logs/service state.
@@ -168,6 +176,7 @@ sudo -n env HOTSWAP_ENV_FILE=/etc/solana-hotswap/hotswap.env CONFIRM_DELETE_SERV
 - mdraid is active or linux_raid_member disks are present.
 - No clean unformatted NVMe data disk exists.
 - Target bootstrap script cannot find required safety features in fire-full-setup.sh.
+- Bootstrap tmux session exits without `/root/solana-cherry-bootstrap.status`.
 - Bootstrap fails before post-bootstrap verification.
 - Any production validator keypair/tower material is present on the temporary host before explicit handoff stage.
 
