@@ -180,6 +180,12 @@ sudo -n env HOTSWAP_ENV_FILE=/etc/solana-hotswap/hotswap.env CONFIRM_DELETE_SERV
 - Bootstrap fails before post-bootstrap verification.
 - Any production validator keypair/tower material is present on the temporary host before explicit handoff stage.
 
+## Identity handoff
+
+After target bootstrap/catchup gates pass, use `docs/identity-handoff.md` and `scripts/solana-identity-handoff.sh` for the guarded `set-identity`, tower copy, and remote `set-identity --require-tower` flow.
+
+The script defaults to dry-run and requires `CONFIRM_SOLANA_IDENTITY_HANDOFF=I_CONFIRM_IDENTITY_HANDOFF` for execution.
+
 ## If create is blocked by payment
 
 Expected symptom:
