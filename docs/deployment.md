@@ -1,6 +1,8 @@
 # Deployment
 
-This kit is designed to run as a standalone operator tool. It does not require any external gateway or Telegram runtime.
+This kit is designed to run as a standalone operator tool. It does not require any external gateway or Telegram runtime for the Solana/Cherry guard commands.
+
+An optional OpenClaw + ChatGPT relay installer is included for operators who want chat-driven access to the same host.
 
 ## Clean server install
 
@@ -20,17 +22,22 @@ Run the installer in dry-run mode first:
 Apply only after reviewing the printed commands:
 
 ```bash
-sudo ./scripts/install.sh --apply
+sudo ./scripts/install.sh --apply --create-env
 ```
 
-The installer copies repository files to `/opt/solana-hot-swap-operator-kit`, installs the systemd unit template, creates a config example under `/etc/solana-hotswap`, and reloads systemd. It does not start a production action.
+The installer copies repository files to `/opt/solana-hot-swap-operator-kit`, installs the systemd unit template, creates config files under `/etc/solana-hotswap`, and reloads systemd. It does not start a production action.
 
 ## Private config
 
-Create a private env file from the example:
+If you did not use `--create-env`, create a private env file from the example:
 
 ```bash
 sudo install -m 0600 /etc/solana-hotswap/hotswap.env.example /etc/solana-hotswap/hotswap.env
+```
+
+Then edit it privately:
+
+```bash
 sudo editor /etc/solana-hotswap/hotswap.env
 ```
 
@@ -69,6 +76,17 @@ HOTSWAP_COMMAND=cherry-order-payload
 
 Paid actions still require explicit confirmation variables.
 
+## Optional OpenClaw + ChatGPT relay
+
+This optional installer is separate from the Solana worker. It installs `openclaw-gateway.service` and `openclaw-codex-relay.service`, removes stale OmniRoute routing, and preserves existing private relay config unless `--force-env` is passed.
+
+```bash
+./scripts/install-openclaw-chatgpt.sh --dry-run
+sudo ./scripts/install-openclaw-chatgpt.sh --apply --restart
+```
+
+Use this only after OpenClaw is installed and authenticated with ChatGPT/OpenAI Codex. See `docs/openclaw-chatgpt.md`.
+
 ## Direct CLI mode
 
 You can run the kit directly without systemd:
@@ -89,3 +107,4 @@ set +a
 - It does not switch validator identities.
 - It does not start or restart Solana services.
 - It does not push logs or secrets anywhere.
+- It does not install OmniRoute.

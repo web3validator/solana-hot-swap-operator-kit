@@ -9,10 +9,11 @@ run_group="${RUN_GROUP:-solana-hotswap}"
 service_name="${SERVICE_NAME:-solana-hotswap.service}"
 apply=0
 enable_service=0
+create_env=0
 
 usage() {
   printf '%s\n' \
-    'Usage: scripts/install.sh [--dry-run] [--apply] [--enable]' \
+    'Usage: scripts/install.sh [--dry-run] [--apply] [--enable] [--create-env]' \
     '' \
     'Installs the operator kit files, config example, and systemd unit template.' \
     'Default mode is --dry-run. No production service is started by this script.' \
@@ -35,6 +36,9 @@ while [ "$#" -gt 0 ]; do
       ;;
     --enable)
       enable_service=1
+      ;;
+    --create-env)
+      create_env=1
       ;;
     -h|--help)
       usage
@@ -81,6 +85,17 @@ if [ "$(id -u)" -ne 0 ]; then
   sudo_cmd=(sudo)
 fi
 
+path_exists() {
+  if [ -e "$1" ]; then
+    return 0
+  fi
+  if [ "${#sudo_cmd[@]}" -gt 0 ]; then
+    sudo test -e "$1" >/dev/null 2>&1
+    return $?
+  fi
+  return 1
+}
+
 if [ "$apply" -eq 0 ]; then
   echo "dry_run=true"
 else
@@ -109,6 +124,9 @@ run "${sudo_cmd[@]}" rsync -a --delete \
   "$repo_root"/ "$install_root"/
 
 run "${sudo_cmd[@]}" install -m 0600 "$repo_root/examples/env.example" "$config_dir/hotswap.env.example"
+if [ "$create_env" -eq 1 ] && ! path_exists "$config_dir/hotswap.env"; then
+  run "${sudo_cmd[@]}" install -m 0600 "$repo_root/examples/env.example" "$config_dir/hotswap.env"
+fi
 run "${sudo_cmd[@]}" install -m 0644 "$repo_root/systemd/solana-hotswap.service.example" "/etc/systemd/system/$service_name"
 run "${sudo_cmd[@]}" systemctl daemon-reload
 
@@ -118,5 +136,6 @@ fi
 
 echo "install_root=$install_root"
 echo "config_example=$config_dir/hotswap.env.example"
+echo "config=$config_dir/hotswap.env"
 echo "service=/etc/systemd/system/$service_name"
-echo "next=copy config example to $config_dir/hotswap.env, fill real values privately, then run systemctl start $service_name"
+echo "next=fill real values privately in $config_dir/hotswap.env, then run systemctl start $service_name"

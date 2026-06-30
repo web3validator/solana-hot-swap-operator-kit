@@ -71,6 +71,43 @@ Verify snapshot directory, expected shred version, entrypoints, and disk mounts.
 
 Do not force driver mode from NIC name alone. Probe live route and driver capability. If unsure, leave provider defaults and keep the target as secondary until stable.
 
+## OpenClaw relay is installed but inference fails
+
+Check services first:
+
+```bash
+systemctl status openclaw-gateway.service openclaw-codex-relay.service --no-pager
+curl -fsS http://127.0.0.1:20129/health
+openclaw models status
+```
+
+Common causes:
+
+- OpenClaw is not authenticated with ChatGPT/OpenAI Codex yet;
+- the service is using an old system Node instead of the Node binary used by OpenClaw;
+- `OPENCLAW_BIN` or `OPENCLAW_WORKSPACE` in `/etc/solana-hotswap/openclaw/relay.env` points to the wrong path;
+- the client IP is missing from `OPENCLAW_CODEX_RELAY_ALLOWLIST`;
+- the client omitted the bearer token from `OPENCLAW_CODEX_RELAY_TOKEN`.
+
+Re-run the installer with explicit paths if needed:
+
+```bash
+sudo env \
+  OPENCLAW_BIN=/home/sol/.nvm/versions/node/v24.11.0/bin/openclaw \
+  OPENCLAW_NODE_BIN=/home/sol/.nvm/versions/node/v24.11.0/bin/node \
+  ./scripts/install-openclaw-chatgpt.sh --apply --restart
+```
+
+## Stale OmniRoute routing remains
+
+The ChatGPT relay path does not use OmniRoute. Re-run:
+
+```bash
+sudo ./scripts/install-openclaw-chatgpt.sh --apply --restart
+```
+
+Then confirm there is no `omniroute.service` and no OpenClaw provider route to `localhost:20128`.
+
 ## Cleanup blocked
 
 The delete safety gate blocks if validator-like processes, keypair-like files, or tower-like files are detected.

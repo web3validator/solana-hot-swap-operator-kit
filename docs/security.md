@@ -67,6 +67,15 @@ Use `set-identity --require-tower` for production handoff. If the target cannot 
 
 Do not run two validators with the same staked identity while the source can still appear in gossip.
 
+## Optional OpenClaw relay
+
+If using `scripts/install-openclaw-chatgpt.sh`:
+
+- keep `/etc/solana-hotswap/openclaw/relay.env` mode `0600`;
+- do not commit or paste `OPENCLAW_CODEX_RELAY_TOKEN`;
+- keep `OPENCLAW_CODEX_RELAY_ALLOWLIST` as narrow as possible;
+- use ChatGPT/OpenAI Codex auth through OpenClaw; OmniRoute is not required.
+
 ## Systemd deployment
 
 If using `systemd/solana-hotswap.service.example`:

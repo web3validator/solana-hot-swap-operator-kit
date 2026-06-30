@@ -1,0 +1,21 @@
+[Unit]
+Description=OpenClaw Codex OpenAI-compatible Relay
+Wants=network-online.target
+After=network-online.target openclaw-gateway.service
+
+[Service]
+Type=simple
+User=@RUN_USER@
+Group=@RUN_GROUP@
+WorkingDirectory=@RELAY_ROOT@
+Environment=HOME=@RUN_HOME@
+Environment=PATH=@NODE_DIR@:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=@RELAY_ENV@
+ExecStart=@NODE_BIN@ @RELAY_ROOT@/openclaw-codex-relay.mjs
+Restart=always
+RestartSec=5
+StandardOutput=append:@RELAY_LOG@
+StandardError=append:@RELAY_LOG@
+
+[Install]
+WantedBy=multi-user.target

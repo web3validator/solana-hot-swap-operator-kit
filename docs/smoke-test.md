@@ -70,12 +70,20 @@ BLOCKER: CHERRY_SSH_KEY_ID must be an integer
 ## 7. Installer dry-run
 
 ```bash
-./scripts/install.sh --dry-run
+./scripts/install.sh --dry-run --create-env
 ```
 
 Expected result: commands are printed but no files are installed.
 
-## 8. Systemd syntax
+## 8. OpenClaw installer help
+
+```bash
+./scripts/install-openclaw-chatgpt.sh --help
+```
+
+Expected result: usage is printed. Full dry-run requires an installed OpenClaw CLI and Node.js 18+.
+
+## 9. Systemd syntax
 
 On a systemd host:
 
@@ -85,3 +93,5 @@ systemd-analyze verify /tmp/solana-hotswap.service
 ```
 
 Some hosts may print unrelated unit permission warnings. The template should not report syntax errors for `solana-hotswap.service`.
+
+For OpenClaw service templates, run `scripts/install-openclaw-chatgpt.sh --dry-run` on a host that already has OpenClaw and Node.js 18+ installed; it renders concrete units during apply.

@@ -46,17 +46,25 @@ solana-hot-swap-operator-kit/
     runbook.md
     cherry-provider.md
     deployment.md
+    openclaw-chatgpt.md
     security.md
     smoke-test.md
     troubleshooting.md
   examples/
     env.example
     cherry-order-payload.example.json
+    openclaw/relay.env.example
+  relay/
+    openclaw-codex-relay.mjs
   scripts/
     install.sh
+    install-openclaw-chatgpt.sh
+    openclaw_config_cleanup.py
     solana-cherry-hotswap-guard.sh
     solana-testnet-upgrade-preflight.sh
   systemd/
+    openclaw-codex-relay.service.example
+    openclaw-gateway.service.example
     solana-hotswap.service.example
   templates/
     session-start-prompt.md
@@ -121,10 +129,23 @@ The kit can be installed as a standalone one-shot systemd worker:
 
 ```bash
 ./scripts/install.sh --dry-run
-sudo ./scripts/install.sh --apply
+sudo ./scripts/install.sh --apply --create-env
 ```
 
 See `docs/deployment.md` before installing on a production operator host.
+
+## Optional OpenClaw + ChatGPT relay
+
+If you want the host reachable through OpenClaw and an OpenAI-compatible relay backed by ChatGPT/OpenAI Codex auth, install the optional integration:
+
+```bash
+./scripts/install-openclaw-chatgpt.sh --dry-run
+sudo ./scripts/install-openclaw-chatgpt.sh --apply --restart
+```
+
+This path explicitly removes stale OmniRoute service/config references and does not set `ANTHROPIC_BASE_URL`.
+
+See `docs/openclaw-chatgpt.md` for prerequisites, env overrides, and verification.
 
 ## Safety rules
 
@@ -143,6 +164,7 @@ Stop the attempt if any of these are true:
 - `docs/runbook.md` — end-to-end hot-swap checklist.
 - `docs/cherry-provider.md` — Cherry Servers API, payload, RAID, and billing gates.
 - `docs/deployment.md` — clean server install and systemd worker usage.
+- `docs/openclaw-chatgpt.md` — optional OpenClaw Gateway and ChatGPT/Codex relay setup without OmniRoute.
 - `docs/security.md` — public repo boundary, secrets, keys, tower handling.
 - `docs/smoke-test.md` — clean VM validation checklist.
 - `docs/troubleshooting.md` — common blockers and recovery paths.
@@ -153,7 +175,7 @@ Stop the attempt if any of these are true:
 make check
 ```
 
-The check compiles Python files, validates shell syntax, and runs a redaction scan for common private artifacts.
+The check compiles Python files, validates shell syntax, optionally checks the relay JavaScript with Node, and runs a redaction scan for common private artifacts.
 
 ## Contribution value
 

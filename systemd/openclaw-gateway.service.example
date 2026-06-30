@@ -1,0 +1,19 @@
+[Unit]
+Description=OpenClaw Gateway
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=@RUN_USER@
+Group=@RUN_GROUP@
+Environment=HOME=@RUN_HOME@
+Environment=PATH=@NODE_DIR@:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=@OPENCLAW_BIN@ gateway run --bind loopback --port @GATEWAY_PORT@ --force
+Restart=always
+RestartSec=10
+StandardOutput=append:@GATEWAY_LOG@
+StandardError=append:@GATEWAY_LOG@
+
+[Install]
+WantedBy=multi-user.target

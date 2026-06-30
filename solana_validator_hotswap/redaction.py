@@ -18,8 +18,6 @@ ALLOWED_FILENAMES = {".env.example"}
 FORBIDDEN_TEXT = [
     "POST" + "HUMAN",
     "web" + "34ever",
-    "Open" + "Claw",
-    "open" + "claw",
     "ai" + "cyberg",
     "196" + "890",
     "146" + "15",
